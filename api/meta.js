@@ -1,0 +1,54 @@
+// /api/meta -> GET (registry of types/tags/statuses), PUT (replace)
+import { sql, ensureTable } from '../lib/db.js';
+import { requireAuth } from '../lib/auth.js';
+
+const DEFAULTS = {
+  types: [
+    { id: 'note',    label: 'Note',    color: '#8b7cff', kind: 'note' },
+    { id: 'task',    label: 'Task',    color: '#2de2e6', kind: 'task' },
+    { id: 'journal', label: 'Journal', color: '#ffb547', kind: 'journal' },
+    { id: 'project', label: 'Project', color: '#ff6d9d', kind: 'project' },
+    { id: 'board',   label: 'Board',   color: '#3dffa2', kind: 'board' },
+  ],
+  tags: [
+    { id: 'rose', color: '#ff6d9d' }, { id: 'amber', color: '#ffb547' },
+    { id: 'green', color: '#3dffa2' }, { id: 'blue', color: '#56aaff' },
+    { id: 'violet', color: '#bd8cff' }, { id: 'slate', color: '#9db1d8' },
+  ],
+  statuses: [
+    { id: 'todo', label: 'To do' },
+    { id: 'done', label: 'Done' },
+  ],
+};
+
+export default async function handler(req, res) {
+  try {
+    if (!requireAuth(req, res)) return;
+    await ensureTable();
+
+    if (req.method === 'GET') {
+      const rows = await sql`SELECT data FROM meta WHERE id = 1;`;
+      const data = rows.length ? rows[0].data : {};
+      return res.status(200).json({
+        types: data.types?.length ? data.types : DEFAULTS.types,
+        tags: data.tags?.length ? data.tags : DEFAULTS.tags,
+        statuses: data.statuses?.length ? data.statuses : DEFAULTS.statuses,
+      });
+    }
+    if (req.method === 'PUT') {
+      const b = req.body || {};
+      // guardrails: never persist an empty taxonomy
+      if (!b.types?.length || !b.statuses?.length)
+        return res.status(400).json({ error: 'types and statuses cannot be empty' });
+      await sql`
+        INSERT INTO meta (id, data) VALUES (1, ${JSON.stringify(b)})
+        ON CONFLICT (id) DO UPDATE SET data = ${JSON.stringify(b)};`;
+      return res.status(200).json({ ok: true });
+    }
+    res.setHeader('Allow', 'GET, PUT');
+    return res.status(405).json({ error: 'Method not allowed' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Server error' });
+  }
+}
