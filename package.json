@@ -1,0 +1,10 @@
+{
+  "name": "notes-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Mobile-friendly tile note keeper",
+  "dependencies": {
+    "@neondatabase/serverless": "^0.10.4"
+  }
+}

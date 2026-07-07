@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="neon">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="theme-color" content="#010206" />
+<title>Second Brain</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/css/theme.css" />
+<link rel="stylesheet" href="/css/app.css" />
+</head>
+<body>
+<div class="sky" aria-hidden="true"></div>
+<canvas id="scene"></canvas>
+
+<!-- Login gate -->
+<div id="lock" class="lock" hidden>
+  <form id="lockForm" class="lock__card">
+    <h1 class="lock__title">Second Brain</h1>
+    <p class="lock__hint">Enter your password to continue.</p>
+    <input id="lockInput" class="lock__input" type="password" placeholder="Password" autocomplete="current-password" />
+    <button type="submit" class="lock__btn">Unlock</button>
+    <p id="lockError" class="lock__error" role="alert"></p>
+  </form>
+</div>
+
+<!-- Sidebar (desktop) / bottom nav (mobile) -->
+<nav class="nav-rail" aria-label="Sections">
+  <div class="nav-rail__brand">Second<br>Brain</div>
+  <a href="#/graph"   class="nav-rail__item" data-view="graph"><span class="nav-rail__icon">🧠</span><span>Graph</span></a>
+  <a href="#/notes"   class="nav-rail__item" data-view="notes"><span class="nav-rail__icon">✦</span><span>Notes</span></a>
+  <a href="#/tasks"   class="nav-rail__item" data-view="tasks"><span class="nav-rail__icon">☑</span><span>Tasks</span></a>
+  <a href="#/projects" class="nav-rail__item" data-view="projects"><span class="nav-rail__icon">▣</span><span>Projects</span></a>
+  <a href="#/journal" class="nav-rail__item" data-view="journal"><span class="nav-rail__icon">☾</span><span>Journal</span></a>
+  <a href="#/boards"  class="nav-rail__item" data-view="boards"><span class="nav-rail__icon">✎</span><span>Boards</span></a>
+  <a href="#/browse"  class="nav-rail__item" data-view="browse"><span class="nav-rail__icon">◈</span><span>Browse</span></a>
+</nav>
+
+<!-- Graph HUD -->
+<header class="hud" id="graphHud">
+  <div class="hud__row">
+    <h1 class="hud__title">Knowledge Graph</h1>
+    <button id="newBtn" class="btn-new"><span class="btn-new__plus">+</span><span>New</span></button>
+  </div>
+  <div class="hud__row">
+    <input id="graphSearch" class="search" type="search" placeholder="Search everything…" autocomplete="off" />
+  </div>
+  <div id="typeFilter" class="tag-filter" aria-label="Filter by type"></div>
+</header>
+<p class="hint" id="hint">Drag to rotate · pinch or scroll to zoom · tap a node</p>
+<div class="nav3d" id="graphNav">
+  <button id="zoomInBtn" class="nav3d__btn" aria-label="Zoom in">＋</button>
+  <button id="zoomOutBtn" class="nav3d__btn" aria-label="Zoom out">－</button>
+  <button id="centerBtn" class="nav3d__btn nav3d__btn--center" aria-label="Re-center">⌖</button>
+</div>
+
+<!-- 2D pages -->
+<main id="page" class="page" hidden></main>
+
+<p id="boardStatus" class="status" role="status" aria-live="polite"></p>
+
+<!-- Item editor overlay -->
+<section id="detail" class="editor-view" aria-hidden="true">
+  <header class="detail-head">
+    <button id="backBtn" class="btn-back"><span aria-hidden="true">←</span> Back</button>
+    <span id="editorType" class="type-pill"></span>
+    <button id="deleteBtn" class="btn-delete">Delete</button>
+  </header>
+  <div class="editor">
+    <input id="titleInput" class="editor__title" type="text" placeholder="Title" maxlength="140" autocomplete="off" />
+    <div id="metaRow" class="metarow"></div>
+    <div id="tagPicker" class="tagpicker"></div>
+    <div id="linksRow" class="linksrow"></div>
+    <textarea id="bodyInput" class="editor__body" placeholder="Write…"></textarea>
+  </div>
+  <p id="saveStatus" class="status status--save" role="status" aria-live="polite"></p>
+</section>
+
+<!-- Whiteboard overlay -->
+<section id="board" class="board-view" aria-hidden="true">
+  <header class="detail-head">
+    <button id="boardBack" class="btn-back"><span aria-hidden="true">←</span> Save & close</button>
+    <input id="boardTitle" class="board-title-input" placeholder="Board title" maxlength="80" />
+    <div class="board-actions">
+      <button id="boardUndo" class="tool-btn" aria-label="Undo">↩</button>
+      <button id="boardClear" class="tool-btn" aria-label="Clear">✕</button>
+      <button id="boardDelete" class="btn-delete">Delete</button>
+    </div>
+  </header>
+  <div class="board-tools" id="boardTools"></div>
+  <canvas id="boardCanvas"></canvas>
+</section>
+
+<!-- Link picker overlay -->
+<div id="picker" class="picker" hidden>
+  <div class="picker__card">
+    <input id="pickerSearch" class="search" placeholder="Search items to link…" />
+    <div id="pickerList" class="picker__list"></div>
+    <button id="pickerClose" class="lock__btn">Close</button>
+  </div>
+</div>
+
+<!-- Reassign modal -->
+<div id="reassign" class="picker" hidden>
+  <div class="picker__card">
+    <h2 class="picker__title" id="reassignTitle"></h2>
+    <p class="picker__msg" id="reassignMsg"></p>
+    <div id="reassignList" class="picker__list"></div>
+    <button id="reassignCancel" class="lock__btn lock__btn--ghost">Cancel</button>
+  </div>
+</div>
+
+<!-- Undo toast -->
+<div id="toast" class="toast" hidden>
+  <span id="toastMsg">Deleted</span>
+  <button id="toastUndo" class="toast__undo">Undo</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="/js/api.js"></script>
+<script src="/js/scene.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>
