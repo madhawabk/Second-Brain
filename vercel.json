@@ -1,5 +1,5 @@
-node_modules
-.vercel
-.env
-.env*.local
-.DS_Store
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "trailingSlash": false
+}
