@@ -1,0 +1,58 @@
+/* API CLIENT */
+const API = {
+  async meta() {
+    const r = await fetch('/api/meta');
+    if (r.status === 401) throw new Error('unauthorized');
+    if (!r.ok) throw new Error('Could not load settings');
+    return r.json();
+  },
+  async saveMeta(meta) {
+    const r = await fetch('/api/meta', { method: 'PUT',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(meta) });
+    if (!r.ok) throw new Error('Could not save settings');
+    return r.json();
+  },
+  async reassign(field, from, to) {
+    const r = await fetch('/api/reassign', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ field, from, to }) });
+    if (!r.ok) throw new Error('Could not reassign');
+    return r.json();
+  },
+  async authStatus() { const r = await fetch('/api/login'); return r.json(); },
+  async login(password) {
+    const r = await fetch('/api/login', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }) });
+    return r.ok;
+  },
+  async list() {
+    const r = await fetch('/api/items');
+    if (r.status === 401) throw new Error('unauthorized');
+    if (!r.ok) throw new Error('Could not load');
+    return r.json();
+  },
+  async get(id) {
+    const r = await fetch(`/api/items/${id}`);
+    if (!r.ok) throw new Error('Could not load item');
+    return r.json();
+  },
+  async create(item) {
+    const r = await fetch('/api/items', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item) });
+    if (!r.ok) throw new Error('Could not create');
+    return r.json();
+  },
+  async update(id, item, opts = {}) {
+    const r = await fetch(`/api/items/${id}`, { method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(item), keepalive: !!opts.keepalive });
+    if (!r.ok) throw new Error('Could not save');
+    return r.json();
+  },
+  async remove(id) {
+    const r = await fetch(`/api/items/${id}`, { method: 'DELETE' });
+    if (!r.ok) throw new Error('Could not delete');
+    return r.json();
+  },
+};

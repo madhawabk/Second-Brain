@@ -1,45 +1,47 @@
-# Second Brain
+// One-time sample data for first-run experience.
+// Runs at most once per database: guarded by a `seeded` flag in the meta row.
+// If the user already has items (e.g. migrated notes), we set the flag
+// WITHOUT inserting, so existing users never get surprise samples.
+// Deleting samples later is permanent — the flag stays set.
+import { randomUUID } from 'crypto';
+import { sql } from './db.js';
 
-A private, production-grade personal knowledge system with a 3D neural
-interface. Works on mobile and desktop browsers.
+export async function ensureSeed() {
+  const metaRows = await sql`SELECT data FROM meta WHERE id = 1;`;
+  const data = metaRows.length ? metaRows[0].data : {};
+  if (data.seeded) return;
 
-## Modules
-- **Knowledge Graph** — the home screen. Every item orbits a procedurally
-  grown neural brain (7 regional neuron clusters with branching dendrites,
-  axon bundles, and travelling pulses) in 3D. Edges connect items to their projects and to explicitly linked
-  items. Drag to rotate (free trackball), pinch/scroll to zoom, ⌖ to
-  re-center, search and type filters reshape the graph live.
-- **Notes** — card grid with tags, search, autosaving editor.
-- **Tasks** — quick-add (type + Enter), one-tap done, due dates, overdue
-  highlighting.
-- **Projects** — group any items; automatic task progress bars.
-- **Journal** — one entry per day via the Today button.
-- **Whiteboards** — freehand neon sketching: color palette, eraser, undo,
-  strokes persist to the database.
-- **Connections** — link any item to any other from its editor; links render
-  as edges in the graph.
-- **Browse (dynamic taxonomy)** — types, tags, and task statuses are all
-  user-editable. Add custom types (label + color; behave like notes), custom
-  tags, and custom statuses (the last status counts as "complete"). Deleting
-  any of them — or a project with items — opens a reassignment dialog and
-  moves affected items atomically. Built-in types are deletable too; their
-  nav tab hides when gone. At least one type and two statuses always remain.
-
-## Architecture
-- One `items` table powers every module (typed rows + JSONB for links and
-  board strokes). Old `notes` tables migrate automatically.
-- Static frontend (no build step): `index.html`, `css/`, `js/` — Three.js
-  from CDN. Serverless API in `api/`. Neon Postgres storage.
-- Single-password gate (`APP_PASSWORD`), signed-cookie sessions.
-- Responsive: sidebar rail ≥900px, bottom tab bar on mobile.
-
-## Deploy to Vercel
-1. Push to a Git repo, import in Vercel. Framework preset: **Other**.
-2. Storage → Create Database → **Neon (Postgres)** → connect.
-3. Settings → Environment Variables → `APP_PASSWORD` = your password.
-4. Redeploy. Tables create/migrate automatically on first request.
-
-## Theming
-All colors are CSS variables in `css/theme.css`, including per-type identity
-colors (`--type-note`, `--type-task`, …) which the 3D graph reads at runtime.
-Change once, everything — cards, chips, graph nodes, edges — follows.
+  const existing = await sql`SELECT COUNT(*)::int AS n FROM items;`;
+  if (existing[0].n === 0) {
+    const id = () => randomUUID();
+    const proj = id(), note1 = id(), note2 = id();
+    const day = 86400000;
+    const journalTitle = new Date().toLocaleDateString([],
+      { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    const strokes = [
+      { color: '#3dffa2', size: 4, erase: false, points: [[60,180],[90,120],[140,150],[200,90],[260,140]] },
+      { color: '#8b7cff', size: 4, erase: false, points: [[80,220],[160,200],[240,230],[300,190]] },
+    ];
+    const rows = [
+      [proj,  'project', 'Welcome project', 'A sample project showing how items group together. Open any item and use the project dropdown to move things in or out.', '', '', null, null, [], {}],
+      [note1, 'note', 'Start here', 'This is your Second Brain. Tap the brain button (🧠) to explore the neural view. Everything you see is sample data — delete any of it, or all of it, whenever you like.', 'violet', '', null, proj, [note2], {}],
+      [note2, 'note', 'Notes can link to each other', 'Open an item and use “+ Link item” under Connections. Links appear as glowing threads in the graph.', 'blue', '', null, proj, [], {}],
+      [id(), 'task', 'Try checking this off', '', '', 'todo', new Date(Date.now() + 2*day).toISOString(), proj, [], {}],
+      [id(), 'task', 'This one is already done', '', '', 'done', null, proj, [], {}],
+      [id(), 'task', 'Add your own task (type + Enter in Tasks)', '', '', 'todo', null, null, [], {}],
+      [id(), 'journal', journalTitle, 'Journal entries are one per day — tap Today to write. This sample entry was created when your Second Brain first woke up.', 'amber', '', null, null, [], {}],
+      [id(), 'board', 'Sketchpad', '2 strokes', '', '', null, proj, [], { strokes }],
+    ];
+    for (const [rid, type, title, body, tag, status, due, pid, links, extra] of rows) {
+      await sql`
+        INSERT INTO items (id, type, title, body, tag, status, due_date, project_id, links, data)
+        VALUES (${rid}, ${type}, ${title}, ${body}, ${tag}, ${status}, ${due},
+                ${pid}, ${JSON.stringify(links)}, ${JSON.stringify(extra)});`;
+    }
+  }
+  // set the flag either way (empty-and-seeded, or existing user opted out by default)
+  const newData = { ...data, seeded: true };
+  await sql`
+    INSERT INTO meta (id, data) VALUES (1, ${JSON.stringify(newData)})
+    ON CONFLICT (id) DO UPDATE SET data = ${JSON.stringify(newData)};`;
+}
