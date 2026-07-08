@@ -50,23 +50,214 @@ window.NoteScene = (() => {
   }
   const fbm = (x,y,z) => noise(x,y,z)*0.6 + noise(x*2.3,y*2.3,z*2.3)*0.3 + noise(x*5.1,y*5.1,z*5.1)*0.1;
 
-  function hemisphere(sign) {
-    const geo = new THREE.SphereGeometry(1.55, 30, 24, sign > 0 ? 0 : Math.PI, Math.PI);
-    const pos = geo.attributes.position, v = new THREE.Vector3();
-    for (let i = 0; i < pos.count; i++) {
-      v.fromBufferAttribute(pos, i);
-      const folds = fbm(v.x*1.8+3, v.y*1.8+7, v.z*1.8+1) * 0.34;
-      v.normalize().multiplyScalar(1.55 + folds);
-      v.x *= 0.92; v.y *= 0.88; v.z *= 1.18;
-      v.x += sign * 0.09;
-      pos.setXYZ(i, v.x, v.y, v.z);
+  /* ---------- REGIONS (anatomy-plausible clusters) ---------- */
+  // center positions in brain-local space; brain silhouette is ~[-2..2] x, [-1.4..1.5] y, [-2.4..2.4] z
+  const REGIONS = [
+    { id:'frontal',    name:'Frontal Lobe',      hue:'#8b7cff', c:[0.0, 0.55, 1.75],  r:1.05,
+      fn:'Planning, decisions, and personality.',
+      facts:['Doesn\u2019t fully mature until about age 25.','Home to the motor cortex that drives movement.','Damage here can change personality itself.'] },
+    { id:'parietal',   name:'Parietal Lobe',     hue:'#56aaff', c:[0.0, 1.05, -0.15], r:1.0,
+      fn:'Touch, spatial sense, and navigation.',
+      facts:['Builds your sense of where your body is in space.','Lets you feel temperature, pressure, and pain.','Helps you do mental math and read maps.'] },
+    { id:'temporal',   name:'Temporal Lobe',     hue:'#2de2e6', c:[1.55, -0.35, 0.55], r:0.95,
+      fn:'Hearing, language, and memory.',
+      facts:['Processes every sound you hear.','Contains the primary auditory cortex.','Key to understanding spoken language.'] },
+    { id:'occipital',  name:'Occipital Lobe',    hue:'#bd8cff', c:[0.0, 0.35, -2.05], r:0.85,
+      fn:'Vision and visual recognition.',
+      facts:['Turns light into the images you see.','The brain\u2019s smallest lobe.','Sits farthest from your eyes, at the very back.'] },
+    { id:'cerebellum', name:'Cerebellum',        hue:'#3dffa2', c:[0.0, -1.05, -1.7], r:0.85,
+      fn:'Balance, coordination, and fine motor skills.',
+      facts:['Holds over half of all your neurons.','Latin for \u201clittle brain.\u201d','Fine-tunes every smooth, practiced movement.'] },
+    { id:'limbic',     name:'Limbic Core',       hue:'#ff6d9d', c:[0.0, -0.05, 0.2], r:0.7,
+      fn:'Emotion, memory, and motivation.',
+      facts:['The hippocampus here forms new memories.','The amygdala flags fear and threat.','Where emotion and memory intertwine.'] },
+    { id:'brainstem',  name:'Brainstem',         hue:'#ffb547', c:[0.0, -1.15, 0.15], r:0.55,
+      fn:'Breathing, heartbeat, and alertness.',
+      facts:['Keeps you breathing without a thought.','Bridges brain and spinal cord.','Controls heart rate and sleep-wake cycles.'] },
+  ];
+
+  let neuralGroup, regionMeshes = [], pulseSys = null, axonMesh = null, DENSITY = null;
+  let exploreMode = false, exploreT = 0;
+  let onRegionCb = null;
+  let activeRegion = null;
+
+  function hex(n){ return new THREE.Color(n); }
+
+  // build one region: soma nodes + branching dendrites, coloured by base identity
+  function buildRegion(reg, density) {
+    const group = new THREE.Group();
+    const center = new THREE.Vector3(...reg.c);
+    const base = hex(reg.hue);
+    const identity = hex('#8b7cff').lerp(hex('#2de2e6'), Math.random()*0.5); // violet/cyan base
+
+    const nodeCount = Math.round(reg.r * reg.r * density.nodes);
+    const somaPos = [], somaCol = [], branchPos = [], branchCol = [];
+    const somaWorld = [];
+
+    for (let i = 0; i < nodeCount; i++) {
+      // sample inside a squashed sphere to fill the region volume
+      let p;
+      do {
+        p = new THREE.Vector3((Math.random()*2-1), (Math.random()*2-1), (Math.random()*2-1));
+      } while (p.length() > 1);
+      p.multiplyScalar(reg.r).add(center);
+      // clip to overall brain silhouette (ellipsoid)
+      const e = (p.x/2.05)**2 + (p.y/1.5)**2 + (p.z/2.45)**2;
+      if (e > 1.02) { i--; continue; }
+      somaWorld.push(p.clone());
+      somaPos.push(p.x, p.y, p.z);
+      somaCol.push(identity.r, identity.g, identity.b);
+
+      // dendrites: a few branches wandering outward from the soma
+      const branches = density.branches;
+      for (let bnch = 0; bnch < branches; bnch++) {
+        let cur = p.clone();
+        let dir = new THREE.Vector3(Math.random()*2-1, Math.random()*2-1, Math.random()*2-1).normalize().multiplyScalar(0.14);
+        const segs = 3 + Math.floor(Math.random()*4);
+        for (let s = 0; s < segs; s++) {
+          const nxt = cur.clone().add(dir);
+          // bias slightly toward region center for cohesion, add jitter for organic look
+          dir.add(center.clone().sub(nxt).multiplyScalar(0.03));
+          dir.add(new THREE.Vector3(Math.random()*2-1, Math.random()*2-1, Math.random()*2-1).multiplyScalar(0.06));
+          dir.clampLength(0.06, 0.16);
+          branchPos.push(cur.x, cur.y, cur.z, nxt.x, nxt.y, nxt.z);
+          const fade = 0.9 - s*0.12;
+          branchCol.push(identity.r*fade, identity.g*fade, identity.b*fade,
+                         identity.r*fade, identity.g*fade, identity.b*fade);
+          cur = nxt;
+        }
+      }
     }
-    return new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-      color: sign > 0 ? 0x8b7cff : 0x2de2e6,
-      wireframe: true, transparent: true, opacity: 0.5,
-      blending: THREE.AdditiveBlending, depthWrite: false,
-    }));
+
+    // dendrite lines
+    const bGeo = new THREE.BufferGeometry();
+    bGeo.setAttribute('position', new THREE.Float32BufferAttribute(branchPos, 3));
+    bGeo.setAttribute('color', new THREE.Float32BufferAttribute(branchCol, 3));
+    const bMat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true,
+      opacity: 0.34, blending: THREE.AdditiveBlending, depthWrite: false });
+    const branchLines = new THREE.LineSegments(bGeo, bMat);
+    group.add(branchLines);
+
+    // soma nodes (glowing points)
+    const sGeo = new THREE.BufferGeometry();
+    sGeo.setAttribute('position', new THREE.Float32BufferAttribute(somaPos, 3));
+    sGeo.setAttribute('color', new THREE.Float32BufferAttribute(somaCol, 3));
+    const sMat = new THREE.PointsMaterial({ size: 0.055, vertexColors: true, transparent: true,
+      opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false,
+      map: nodeSprite(), sizeAttenuation: true });
+    const somaPoints = new THREE.Points(sGeo, sMat);
+    group.add(somaPoints);
+
+    group.userData = { reg, base, identity, branchMat: bMat, somaMat: sMat,
+      branchLines, somaPoints, somaWorld, center: center.clone(), highlight: 0 };
+    return group;
   }
+
+  // soft round sprite for neuron nodes
+  let _nodeTex = null;
+  function nodeSprite() {
+    if (_nodeTex) return _nodeTex;
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d');
+    const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.3, 'rgba(255,255,255,0.7)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+    _nodeTex = new THREE.CanvasTexture(c);
+    return _nodeTex;
+  }
+
+  // long-range axon bundles between regions (the sweeping arcs in the reference)
+  function buildAxons(density) {
+    const pos = [], col = [];
+    const a = hex('#8b7cff'), b = hex('#2de2e6');
+    const pairs = [
+      [0,1],[1,3],[0,2],[1,5],[5,4],[5,6],[2,5],[1,2],[0,5]
+    ];
+    for (const [i, j] of pairs) {
+      const A = new THREE.Vector3(...REGIONS[i].c), B = new THREE.Vector3(...REGIONS[j].c);
+      const strands = density.axons;
+      for (let s = 0; s < strands; s++) {
+        // curved bundle: quadratic bezier with a lifted control point
+        const mid = A.clone().add(B).multiplyScalar(0.5);
+        mid.add(new THREE.Vector3((Math.random()*2-1)*0.5, 0.4+Math.random()*0.5, (Math.random()*2-1)*0.5));
+        const steps = 14;
+        let prev = null;
+        for (let k = 0; k <= steps; k++) {
+          const u = k/steps;
+          const p = A.clone().multiplyScalar((1-u)*(1-u))
+            .add(mid.clone().multiplyScalar(2*(1-u)*u))
+            .add(B.clone().multiplyScalar(u*u));
+          p.x += (Math.random()*2-1)*0.02; p.y += (Math.random()*2-1)*0.02;
+          if (prev) {
+            pos.push(prev.x, prev.y, prev.z, p.x, p.y, p.z);
+            const cc = a.clone().lerp(b, u);
+            col.push(cc.r, cc.g, cc.b, cc.r, cc.g, cc.b);
+          }
+          prev = p;
+        }
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    const mat = new THREE.LineBasicMaterial({ vertexColors: true, transparent: true,
+      opacity: 0.16, blending: THREE.AdditiveBlending, depthWrite: false });
+    return new THREE.LineSegments(geo, mat);
+  }
+
+  // travelling pulses along axon pathways
+  function buildPulses(density) {
+    const count = density.pulses;
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(count * 3);
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const mat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.11, transparent: true,
+      opacity: 0.0, blending: THREE.AdditiveBlending, depthWrite: false,
+      map: nodeSprite(), sizeAttenuation: true });
+    const points = new THREE.Points(geo, mat);
+    const paths = [];
+    for (let i = 0; i < count; i++) {
+      const i0 = Math.floor(Math.random()*REGIONS.length);
+      let i1 = Math.floor(Math.random()*REGIONS.length);
+      if (i1 === i0) i1 = (i1+1) % REGIONS.length;
+      paths.push({ a: new THREE.Vector3(...REGIONS[i0].c),
+                   b: new THREE.Vector3(...REGIONS[i1].c),
+                   t: Math.random(), speed: 0.15 + Math.random()*0.35 });
+    }
+    return { points, geo, mat, paths, pos };
+  }
+
+  function buildNeuralBrain() {
+    neuralGroup = new THREE.Group();
+    regionMeshes = [];
+    // density scales down on weaker devices
+    const weak = (navigator.hardwareConcurrency || 4) <= 4 || Math.min(innerWidth, innerHeight) < 420;
+    const density = weak
+      ? { nodes: 26, branches: 1, axons: 2, pulses: 22 }
+      : { nodes: 46, branches: 2, axons: 3, pulses: 40 };
+    DENSITY = density;
+
+    for (const reg of REGIONS) {
+      const g = buildRegion(reg, density);
+      neuralGroup.add(g);
+      regionMeshes.push(g);
+    }
+    axonMesh = buildAxons(density);
+    neuralGroup.add(axonMesh);
+    pulseSys = buildPulses(density);
+    neuralGroup.add(pulseSys.points);
+
+    // faint inner glow core
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(0.4, 16, 12),
+      new THREE.MeshBasicMaterial({ color: 0x8b7cff, transparent: true, opacity: 0.08,
+        blending: THREE.AdditiveBlending, depthWrite: false }));
+    neuralGroup.add(core);
+    return neuralGroup;
+  }
+
 
   /* ---------- tile sprite texture ---------- */
   function tileTexture(note) {
@@ -134,7 +325,7 @@ window.NoteScene = (() => {
         Math.sin(phi)*Math.cos(theta), Math.cos(phi)*yFlat, Math.sin(phi)*Math.sin(theta)
       ).multiplyScalar(radius);
       const big = (it.kind || it.type) === 'project' ? 1.18 : 1;
-      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tileTexture(it), transparent: true }));
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tileTexture(it), transparent: true, opacity: 1 }));
       sprite.scale.set(2.3*scaleK*big, 1.15*scaleK*big, 1);
       sprite.position.copy(p);
       sprite.userData = { id: it.id, base: p.clone(), seed: Math.random()*Math.PI*2, k: scaleK*big, pulse: 0 };
@@ -180,13 +371,26 @@ window.NoteScene = (() => {
   }
 
   /* ---------- interaction ---------- */
+  let panX = 0, panY = 0;            // Explore-mode pan offset
   function wire(canvas) {
     const pt = (e) => e.touches ? e.touches[0] : e;
+    let panning = false, lastPanX = 0, lastPanY = 0;
+
     const down = (e) => {
       if (e.touches && e.touches.length === 2) {
         pinchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
                                e.touches[0].clientY - e.touches[1].clientY);
+        if (exploreMode) {
+          panning = true;
+          lastPanX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          lastPanY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        }
         return;
+      }
+      // right-drag = pan on desktop in Explore mode
+      if (exploreMode && (e.button === 2 || e.shiftKey)) {
+        panning = true; lastPanX = pt(e).clientX; lastPanY = pt(e).clientY;
+        e.preventDefault(); return;
       }
       dragging = true; moved = 0;
       lastX = pt(e).clientX; lastY = pt(e).clientY;
@@ -197,7 +401,18 @@ window.NoteScene = (() => {
                              e.touches[0].clientY - e.touches[1].clientY);
         camZ = clampZ(camZ * pinchDist / d); resetting = false;
         pinchDist = d;
+        if (panning && exploreMode) {
+          const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          panX += (mx - lastPanX) * 0.01; panY -= (my - lastPanY) * 0.01;
+          lastPanX = mx; lastPanY = my;
+        }
         return;
+      }
+      if (panning && exploreMode) {
+        const x = pt(e).clientX, y = pt(e).clientY;
+        panX += (x - lastPanX) * 0.01; panY -= (y - lastPanY) * 0.01;
+        lastPanX = x; lastPanY = y; return;
       }
       if (!dragging) return;
       const x = pt(e).clientX, y = pt(e).clientY;
@@ -208,11 +423,16 @@ window.NoteScene = (() => {
       spin(velY, velX);
       lastX = x; lastY = y;
     };
-    const up = (e) => { if (dragging && moved < 8) tap(e); dragging = false; };
+    const up = (e) => {
+      if (panning) { panning = false; return; }
+      if (dragging && moved < 8) tap(e);
+      dragging = false;
+    };
 
     canvas.addEventListener('mousedown', down);
     canvas.addEventListener('mousemove', move);
     window.addEventListener('mouseup', up);
+    canvas.addEventListener('contextmenu', (e) => { if (exploreMode) e.preventDefault(); });
     canvas.addEventListener('touchstart', down, { passive: true });
     canvas.addEventListener('touchmove', move, { passive: true });
     canvas.addEventListener('touchend', up);
@@ -227,6 +447,23 @@ window.NoteScene = (() => {
     ndc.x = (p.clientX / innerWidth) * 2 - 1;
     ndc.y = -(p.clientY / innerHeight) * 2 + 1;
     ray.setFromCamera(ndc, camera);
+
+    if (exploreMode) {
+      // pick the nearest region centre to the ray
+      let best = null, bestD = 0.9;
+      for (const g of regionMeshes) {
+        const world = g.userData.center.clone().applyMatrix4(neuralGroup.matrixWorld);
+        const d = ray.ray.distanceToPoint(world);
+        if (d < bestD) { bestD = d; best = g; }
+      }
+      if (best) {
+        activeRegion = best;
+        for (const g of regionMeshes) g.userData.target = (g === best) ? 1 : 0;
+        if (onRegionCb) onRegionCb(best.userData.reg);
+      }
+      return;
+    }
+
     const hit = ray.intersectObjects(tiles)[0];
     if (hit && onTapCb) {
       hit.object.userData.pulse = 1;
@@ -239,22 +476,67 @@ window.NoteScene = (() => {
     requestAnimationFrame(frame);
     if (paused) return;
     t += 0.016;
+    const hz = fitZ();
     if (resetting) {
-      const hz = fitZ();
       world.quaternion.slerp(HOME_Q, 0.12);
       camZ += (hz - camZ) * 0.12;
+      panX *= 0.85; panY *= 0.85;
       if (world.quaternion.angleTo(HOME_Q) < 0.005 && Math.abs(camZ - hz) < 0.05) {
         world.quaternion.copy(HOME_Q); camZ = hz; resetting = false;
       }
     } else if (!dragging) {
       velY *= 0.95; velX *= 0.95;
-      spin(velY + (reduce ? 0 : 0.0016), velX);
+      spin(velY + (reduce ? 0 : (exploreMode ? 0.0009 : 0.0016)), velX);
     }
     camera.position.z += (camZ - camera.position.z) * 0.1;
+    // pan the world laterally in explore mode
+    world.position.x += (panX - world.position.x) * 0.15;
+    world.position.y += (panY - world.position.y) * 0.15;
 
-    brain.rotation.y = Math.sin(t*0.3) * 0.06;
-    brain.position.y = Math.sin(t*0.7) * 0.05;
+    // brain idle drift
+    neuralGroup.rotation.y = Math.sin(t*0.25) * 0.05;
+    neuralGroup.position.y = Math.sin(t*0.6) * 0.04;
 
+    // region highlight easing + neuron shimmer
+    const boost = exploreMode ? 1 : 0.55;
+    for (const g of regionMeshes) {
+      const u = g.userData;
+      u.highlight += (((u.target || 0)) - u.highlight) * 0.12;
+      const base = (exploreMode ? 0.5 : 0.34);
+      const shimmer = reduce ? 0 : Math.sin(t*1.4 + u.center.x*3) * 0.05;
+      u.branchMat.opacity = base * boost + u.highlight * 0.4 + shimmer;
+      u.somaMat.opacity = (0.7 * boost) + u.highlight * 0.3 + shimmer;
+      // reveal region hue on highlight; blend back to violet/cyan identity otherwise
+      const col = u.identity.clone().lerp(new THREE.Color(u.reg.hue), u.highlight);
+      u.somaMat.color = col;
+      u.branchMat.color = col;
+      const sc = 1 + u.highlight * 0.06 + shimmer * 0.4;
+      g.scale.setScalar(sc);
+    }
+    if (axonMesh) axonMesh.material.opacity = (exploreMode ? 0.28 : 0.16);
+
+    // travelling pulses
+    if (pulseSys && !reduce) {
+      const P = pulseSys;
+      P.mat.opacity = exploreMode ? 0.95 : 0.6;
+      for (let i = 0; i < P.paths.length; i++) {
+        const pa = P.paths[i];
+        pa.t += pa.speed * 0.016;
+        if (pa.t > 1) { pa.t = 0;
+          const i0 = Math.floor(Math.random()*REGIONS.length);
+          let i1 = Math.floor(Math.random()*REGIONS.length); if (i1===i0) i1=(i1+1)%REGIONS.length;
+          pa.a.set(...REGIONS[i0].c); pa.b.set(...REGIONS[i1].c);
+        }
+        const u = pa.t;
+        const x = pa.a.x + (pa.b.x - pa.a.x)*u;
+        const y = pa.a.y + (pa.b.y - pa.a.y)*u + Math.sin(u*Math.PI)*0.4;
+        const z = pa.a.z + (pa.b.z - pa.a.z)*u;
+        P.pos[i*3] = x; P.pos[i*3+1] = y; P.pos[i*3+2] = z;
+      }
+      P.geo.attributes.position.needsUpdate = true;
+    }
+
+    // note tiles (hidden/faded in explore mode)
     for (const s of tiles) {
       if (!reduce) s.position.y = s.userData.base.y + Math.sin(t*1.1 + s.userData.seed) * 0.12;
       if (s.userData.pulse) {
@@ -263,21 +545,26 @@ window.NoteScene = (() => {
         s.scale.set(2.3*k, 1.15*k, 1);
         if (s.userData.pulse < 0.02) s.userData.pulse = 0;
       }
+      const tgt = exploreMode ? 0 : 1;
+      s.material.opacity += (tgt - (s.material.opacity ?? 1)) * 0.15;
+      s.visible = s.material.opacity > 0.02;
     }
-    for (const t of tethers) {
-      t.line.geometry.setFromPoints([
-        t.other ? t.other.position : t.from, t.sprite.position]);
+    for (const tt of tethers) {
+      tt.line.geometry.setFromPoints([tt.other ? tt.other.position : tt.from, tt.sprite.position]);
+      const tgt = exploreMode ? 0 : (0.4);
+      tt.line.material.opacity += (tgt - tt.line.material.opacity) * 0.15;
     }
     renderer.render(scene, camera);
   }
 
   /* ---------- init ---------- */
-  function init(canvas, { onTap, colorOf, labelOf } = {}) {
+  function init(canvas, { onTap, colorOf, labelOf, onRegion } = {}) {
     onTapCb = onTap || null; colorOfCb = colorOf || null; labelOfCb = labelOf || null;
+    onRegionCb = onRegion || null;
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x010206, 0.016);
+    scene.fog = new THREE.FogExp2(0x010206, 0.015);
     camera = new THREE.PerspectiveCamera(55, 1, 0.1, 100);
     camera.position.set(0, 0.2, 10);
     camera.lookAt(0, 0, 0);
@@ -285,16 +572,11 @@ window.NoteScene = (() => {
     world.quaternion.copy(HOME_Q);
     scene.add(world);
 
-    brain = new THREE.Group();
-    brain.add(hemisphere(1), hemisphere(-1));
-    brain.add(new THREE.Mesh(
-      new THREE.SphereGeometry(0.55, 16, 12),
-      new THREE.MeshBasicMaterial({ color: 0x8b7cff, transparent: true, opacity: 0.12,
-        blending: THREE.AdditiveBlending, depthWrite: false })));
+    brain = buildNeuralBrain();
     world.add(brain);
 
     // star dust
-    const dustN = 260, dustPos = new Float32Array(dustN * 3);
+    const dustN = 240, dustPos = new Float32Array(dustN * 3);
     for (let i = 0; i < dustN; i++) {
       const u = Math.random()*2 - 1, a = Math.random()*Math.PI*2, s = Math.sqrt(1 - u*u);
       const r = 6 + Math.random()*8;
@@ -303,7 +585,7 @@ window.NoteScene = (() => {
     const dustGeo = new THREE.BufferGeometry();
     dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
     world.add(new THREE.Points(dustGeo, new THREE.PointsMaterial({
-      color: 0x8b94ba, size: 0.035, transparent: true, opacity: 0.7 })));
+      color: 0x8b94ba, size: 0.03, transparent: true, opacity: 0.6 })));
 
     const resize = () => {
       renderer.setSize(innerWidth, innerHeight);
@@ -315,10 +597,21 @@ window.NoteScene = (() => {
     frame();
   }
 
+  function setExplore(on) {
+    exploreMode = on;
+    if (!on) {
+      activeRegion = null;
+      for (const g of regionMeshes) g.userData.target = 0;
+      panX = 0; panY = 0;
+      resetting = true;
+    }
+  }
+
   return {
     init, setNotes, pulse,
     pause(v) { paused = v; },
     zoom(delta) { camZ = clampZ(camZ + delta); resetting = false; },
-    recenter() { resetting = true; velX = velY = 0; },
+    recenter() { resetting = true; velX = velY = 0; panX = 0; panY = 0; },
+    setExplore, isExplore: () => exploreMode,
   };
 })();

@@ -381,3 +381,41 @@ body.page-mode .nav3d, body.page-mode #boardStatus { display: none; }
 .btn-small:hover { color: var(--accent-2); border-color: var(--accent-2); }
 .crumb { border: none; background: none; color: var(--accent); font: inherit;
   font-weight: 600; cursor: pointer; padding: 0; margin-bottom: 12px; display: inline-block; }
+
+/* ---- Explore toggle + region card ---- */
+.nav3d__btn--explore { font-size: 1.1rem; }
+.nav3d__btn--explore.active { color: var(--accent);
+  box-shadow: 0 0 20px -2px var(--accent), 0 6px 20px -6px rgba(0,0,0,0.7);
+  border-color: var(--accent); }
+body.explore-mode .hud, body.explore-mode .hint,
+body.explore-mode #zoomInBtn, body.explore-mode #zoomOutBtn { opacity: 0; pointer-events: none;
+  transition: opacity 0.4s ease; }
+body.explore-mode .nav-rail { opacity: 0; pointer-events: none; transition: opacity 0.4s ease; }
+
+.region-card[hidden], .explore-hint[hidden] { display: none; }
+.region-card {
+  position: fixed; z-index: 6; left: 16px; right: 16px; bottom: 96px;
+  max-width: 380px; margin: 0 auto;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px 20px 16px;
+  backdrop-filter: blur(12px);
+  box-shadow: var(--shadow), 0 0 40px -12px var(--region-glow, var(--accent));
+  animation: card-rise 0.35s cubic-bezier(0.34,1.4,0.64,1) both;
+}
+@media (min-width: 900px) { .region-card { left: auto; right: 28px; bottom: 32px; margin: 0; } }
+@keyframes card-rise { from { opacity: 0; transform: translateY(20px); }
+                       to { opacity: 1; transform: none; } }
+.region-card__close { position: absolute; top: 10px; right: 12px; border: none; background: none;
+  color: var(--text-faint); font-size: 1.3rem; cursor: pointer; padding: 4px; }
+.region-card__name { font-family: "Fraunces", Georgia, serif; font-weight: 600; font-size: 1.25rem;
+  color: var(--region-glow, var(--text)); text-shadow: 0 0 18px var(--region-glow, transparent);
+  margin-bottom: 4px; }
+.region-card__fn { color: var(--text-muted); font-size: 0.9rem; margin-bottom: 10px; }
+.region-card__fact { color: var(--text-faint); font-size: 0.85rem; line-height: 1.5;
+  border-top: 1px solid var(--border); padding-top: 10px; }
+.region-card__fact::before { content: "✦ "; color: var(--region-glow, var(--accent)); }
+.explore-hint { position: fixed; z-index: 6; bottom: 30px; left: 0; right: 0; text-align: center;
+  font-size: 0.8rem; color: var(--text-faint); letter-spacing: 0.03em; pointer-events: none;
+  animation: fade-hint 0.5s ease both; }
+@media (min-width: 900px) { .explore-hint { bottom: 22px; } }
+@keyframes fade-hint { from { opacity: 0; } to { opacity: 1; } }

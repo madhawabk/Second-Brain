@@ -44,6 +44,7 @@
     onTap: (id) => openItem(id),
     colorOf: (it) => itemColor(it),
     labelOf: (it) => typeOf(it.type).label,
+    onRegion: (reg) => showRegionCard(reg),
   });
   setTimeout(() => { hint.style.opacity = 0; }, 7000);
 
@@ -84,6 +85,35 @@
   $('zoomInBtn').onclick = () => NoteScene.zoom(-1.6);
   $('zoomOutBtn').onclick = () => NoteScene.zoom(1.6);
   $('centerBtn').onclick = () => NoteScene.recenter();
+
+  let factTimer = null;
+  function showRegionCard(reg) {
+    const card = $('regionCard');
+    card.style.setProperty('--region-glow', reg.hue);
+    $('regionName').textContent = reg.name;
+    $('regionFn').textContent = reg.fn;
+    let fi = 0;
+    const facts = reg.facts || [];
+    $('regionFact').textContent = facts[0] || '';
+    clearInterval(factTimer);
+    if (facts.length > 1) factTimer = setInterval(() => {
+      fi = (fi + 1) % facts.length;
+      const f = $('regionFact');
+      f.style.opacity = 0;
+      setTimeout(() => { f.textContent = facts[fi]; f.style.opacity = 1; }, 200);
+    }, 4200);
+    card.hidden = false;
+  }
+  $('regionClose').onclick = () => { $('regionCard').hidden = true; clearInterval(factTimer); };
+
+  function setExplore(on) {
+    document.body.classList.toggle('explore-mode', on);
+    $('exploreBtn').classList.toggle('active', on);
+    $('exploreHint').hidden = !on;
+    if (!on) { $('regionCard').hidden = true; clearInterval(factTimer); }
+    NoteScene.setExplore(on);
+  }
+  $('exploreBtn').onclick = () => setExplore(!NoteScene.isExplore());
   $('newBtn').onclick = () => openPicker('What do you want to create?',
     META.types.map(t => ({ label: t.label, color: t.color, onPick: () => createItem(t.id) })));
 

@@ -54,7 +54,17 @@
   <button id="zoomInBtn" class="nav3d__btn" aria-label="Zoom in">＋</button>
   <button id="zoomOutBtn" class="nav3d__btn" aria-label="Zoom out">－</button>
   <button id="centerBtn" class="nav3d__btn nav3d__btn--center" aria-label="Re-center">⌖</button>
+  <button id="exploreBtn" class="nav3d__btn nav3d__btn--explore" aria-label="Explore the brain">🧠</button>
 </div>
+
+<!-- Explore-mode region info card -->
+<div id="regionCard" class="region-card" hidden>
+  <button id="regionClose" class="region-card__close" aria-label="Close">×</button>
+  <div class="region-card__name" id="regionName"></div>
+  <div class="region-card__fn" id="regionFn"></div>
+  <div class="region-card__fact" id="regionFact"></div>
+</div>
+<div id="exploreHint" class="explore-hint" hidden>Tap a glowing region · two-finger drag to pan · ✕ to exit</div>
 
 <!-- 2D pages -->
 <main id="page" class="page" hidden></main>

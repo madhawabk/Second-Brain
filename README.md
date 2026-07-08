@@ -4,8 +4,9 @@ A private, production-grade personal knowledge system with a 3D neural
 interface. Works on mobile and desktop browsers.
 
 ## Modules
-- **Knowledge Graph** — the home screen. Every item orbits a wireframe brain
-  in 3D. Edges connect items to their projects and to explicitly linked
+- **Knowledge Graph** — the home screen. Every item orbits a procedurally
+  grown neural brain (7 regional neuron clusters with branching dendrites,
+  axon bundles, and travelling pulses) in 3D. Edges connect items to their projects and to explicitly linked
   items. Drag to rotate (free trackball), pinch/scroll to zoom, ⌖ to
   re-center, search and type filters reshape the graph live.
 - **Notes** — card grid with tags, search, autosaving editor.
